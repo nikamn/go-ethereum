@@ -1,3 +1,5 @@
+Edited `core/vm/contracts.go` to add a pre-compiled contract.
+
 ## Go Ethereum
 
 Official Golang implementation of the Ethereum protocol.

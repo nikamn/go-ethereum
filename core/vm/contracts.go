@@ -32,6 +32,14 @@ import (
 
 	//lint:ignore SA1019 Needed for precompile
 	"golang.org/x/crypto/ripemd160"
+
+	// Added by nikamn.
+	// For Bilinear pairing functionality, we need following extra packages.
+	"github.com/Nik-U/pbc"
+	"github.com/ethereum/go-ethereum/log"
+	"strconv"
+	"encoding/json"
+	"strings"
 )
 
 // PrecompiledContract is the basic interface for native Go contracts. The implementation
@@ -957,4 +965,91 @@ func (c *bls12381MapG2) Run(input []byte) ([]byte, error) {
 
 	// Encode the G2 point to 256 bytes
 	return g.EncodePoint(r), nil
+}
+
+//-------------------------------------------------------------------//
+// symmetric bilinear pairing check implemented as a native contract.
+type symmPairingCheck struct{}
+
+type Shared struct {
+	G []byte           // shared G 
+	Params string      // shared byte array w.r.t. parameters
+}
+
+// RequiredGas returns the gas required to execute the pre-compiled contract.
+//
+// This method does not require any overflow checking as the input size gas costs
+// required for anything significant is so high that it's impossible to pay for.
+func (c *symmPairingCheck) RequiredGas(input []byte) uint64 {
+	// log.Warn("Pairing Check - RequiredGas func : Received", string(input[:]), "\n")
+	// for now, let the cost be 0. Need to approximate this. 
+	return 4000
+}
+
+func ByteArraytoString(b []byte) string {
+	s := make([]string,len(b))
+	//var m uint8;
+	for i := range b {
+		//m = b[i]
+		//s[i] = strconv.Itoa(m)
+		s[i] = string(b[i])
+	}
+	return strings.Join(s,",")
+}
+
+
+
+func (c *symmPairingCheck) Run(in []byte) ([]byte, error) {
+	log.Warn("Byte array : Received ", string(in[:]), nil)
+	len_in := len(in)
+	str_len_in := strconv.Itoa(len_in)
+	log.Warn("len(in) : ", str_len_in, nil)
+	
+	b := make([]byte, 559)
+	for i:= range b{		
+		b[i] = in[32*(i+1)-1]
+	}
+	log.Warn("Byte array : Received ", string(b[:]), nil)
+	btos := ByteArraytoString(b)
+	log.Warn("btos : Received ", btos, nil)
+
+	var s Shared
+	json.Unmarshal(b, &s)
+	//log.Warn(err.Error())
+	log.Warn("s.G : ", string(s.G[:]), nil)
+	log.Warn("s.Params : ", s.Params, nil)
+	
+
+	/*len_G := int(in[0])
+	G_t := append([]byte(nil), in[1:(len_G+1)]...)
+	param_t := append([]byte(nil), in[(len_G+1):]...)
+	log.Warn("G_t : ", string(G_t[:]), "\n")
+	log.Warn("param_t : ", string(param_t[:]), "\n")
+	var s string
+	if err := json.Unmarshal(param_t, &s); err != nil {
+		
+	}
+	log.Warn("s : ", s, "\n")*/
+	
+	pairing, _ := pbc.NewPairingFromString(s.Params)
+	g := pairing.NewG1().SetBytes(s.G)
+	
+	log.Warn("Element Length : ", strconv.Itoa(g.BytesLen()), nil)
+	buf := g.Bytes()
+	log.Warn("Element Received : ", string(buf[:]), nil)
+
+	u := pairing.NewG1().Rand()
+	lhs := pairing.NewGT().Pair(u, g)
+	rhs := pairing.NewGT().Pair(g, u)
+
+	output := make([]byte, 256)
+
+	// Formally checking lhs ?= rhs
+	if lhs.Equals(rhs) {
+			output[0] = 1
+	} else {
+			output[0] = 0
+	}
+
+	return output, nil
 }
